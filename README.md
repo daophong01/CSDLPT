@@ -1,55 +1,62 @@
 # AirTicket — Thiết kế web quản lý vé máy bay (định hướng CSDL phân tán)
 
-Ứng dụng mẫu bằng Next.js mô phỏng các chức năng:
+Ứng dụng Next.js với backend PostgreSQL, mô phỏng:
 - Tìm kiếm chuyến bay
-- Tạo và xem đặt chỗ
+- Tạo và xem đặt chỗ (khóa giao dịch chống oversell)
 - Mô tả kiến trúc cơ sở dữ liệu phân tán
+
+## Thiết lập cơ sở dữ liệu
+
+1) Tạo database Postgres (ví dụ: `airticket`) và cấu hình biến môi trường:
+   - Sao chép `.env.example` thành `.env`
+   - Cập nhật `DATABASE_URL=postgres://user:password@localhost:5432/airticket`
+
+2) Khởi tạo lược đồ và dữ liệu mẫu (public schema):
+   - psql -d airticket -f db/schema.sql
+   - psql -d airticket -f db/sample_data_public.sql
+
+3) (Tuỳ chọn) Mô phỏng phân tán theo site (HN/DN/HCM):
+   - psql -d airticket -f db/fragmentation.sql
+   - Lưu ý: tệp phân mảnh tạo các schema hn/dn/hcm và view hợp nhất; nếu dùng phân mảnh, không nên đồng thời tạo bảng trùng tên ở public.
 
 ## Chạy dự án
 
 ```bash
+npm install
 npm run dev
-# hoặc
-yarn dev
-# hoặc
-pnpm dev
-# hoặc
-bun dev
+# hoặc: yarn/pnpm/bun
 ```
 
-Mở http://localhost:3000 để truy cập ứng dụng.
+Mở http://localhost:3000.
 
 ## Tính năng
 
 - Trang chủ: tổng quan hệ thống
-- Tìm chuyến bay: /search — gọi API `/api/flights` với tiêu chí tìm kiếm
-- Đặt chỗ: /bookings — gọi API `/api/bookings` để tạo/xem đặt chỗ (dữ liệu lưu trong bộ nhớ tạm)
-- Kiến trúc: /architecture — mô tả các thành phần và chiến lược phân tán
+- Tìm chuyến bay: /search — gọi API `/api/flights` (truy vấn Postgres)
+- Đặt chỗ: /bookings — gọi API `/api/bookings` để tạo/xem đặt chỗ (Postgres)
+  - Khi đặt chỗ, hệ thống dùng `pg_advisory_xact_lock(flight_id)` để tuần tự hóa giao dịch theo chuyến bay, tránh oversell.
+  - Số ghế được tính từ `airplane.capacity` và số vé đã phát hành (`ticket`).
 
 ## Kiến trúc CSDL phân tán (định hướng)
 
-Hệ thống thực tế nên tách thành các microservice với ranh giới dữ liệu rõ ràng:
+- Flight Catalog: dữ liệu tuyến/lịch bay, có thể sao chép rộng (read replicas).
+- Inventory/Booking: giao dịch ghi nhất quán mạnh; ưu tiên DB phân tán (CockroachDB/Yugabyte) hoặc Postgres sharding.
+- Payments: xử lý thanh toán, idempotency, ledger.
+- Customer: phân mảnh dọc (public/private), bảo mật PII.
 
-- Flight Catalog (danh mục chuyến bay): lưu trữ tuyến bay, lịch bay, hãng. Dữ liệu ít biến động, có thể sao chép rộng (multi-region read replicas).
-- Inventory/Booking (tồn kho ghế và đặt chỗ): giao dịch ghi mạnh mẽ, kiểm soát cạnh tranh cao. Ưu tiên cơ sở dữ liệu phân tán có nhất quán mạnh hoặc đồng bộ hoá phân vùng (ví dụ: CockroachDB, Yugabyte, hoặc Postgres + sharding).
-- Payments: xử lý thanh toán, idempotency và ledger riêng.
-- Customer: hồ sơ khách hàng, tuân thủ bảo mật (PII).
+Chiến lược:
+- Phân vùng theo tuyến/khu vực; sao chép đa vùng.
+- Event Sourcing + CQRS cho tách luồng ghi/đọc.
+- Chỉ mục tìm kiếm (Elasticsearch).
+- Hàng đợi sự kiện (Kafka/Pulsar).
 
-Các chiến lược:
-- Phân vùng theo tuyến/khu vực: ví dụ partition theo (origin, destination) hoặc theo region.
-- Sao chép đa vùng và điều phối failover tự động cho đọc/ghi.
-- Event Sourcing + CQRS: luồng ghi (đặt chỗ) phát sự kiện; luồng đọc (tìm kiếm) tiêu thụ và tạo các materialized views.
-- Chỉ mục tìm kiếm: Elasticsearch/OpenSearch cho truy vấn tốc độ cao; đồng bộ bằng sự kiện.
-- Hàng đợi sự kiện: Kafka/Pulsar làm backbone tích hợp, đảm bảo thứ tự và bền vững.
-
-Tính nhất quán:
-- Đặt chỗ cần đảm bảo không oversell ghế → sử dụng giao dịch, khoá theo chuyến bay và thời điểm; chiến lược “reservation hold” với TTL.
-- Chấp nhận tính nhất quán cuối cùng trên kênh tìm kiếm; nguồn sự thật là Inventory/Booking.
+Nhất quán & chống oversell:
+- Transaction + khóa (advisory lock theo `flight_id`), kiểm số vé < sức chứa.
+- Có thể mở rộng bằng “reservation hold” với TTL.
 
 Khả năng mở rộng:
-- Scale theo chiều ngang bằng cách thêm shard/partition.
-- Rate limiting, circuit breaker giữa dịch vụ.
-- Observability: tracing, metrics, log tập trung.
+- Sharding/partition theo region hoặc tuyến.
+- Observability đầy đủ (logs, metrics, tracing).
 
 ## Cấu trúc thư mục đáng chú ý
 
@@ -58,14 +65,14 @@ Khả năng mở rộng:
   - `search/page.tsx` — tìm chuyến bay
   - `bookings/page.tsx` — danh sách đặt chỗ
   - `architecture/page.tsx` — mô tả kiến trúc
-  - `api/flights/route.ts` — API tìm kiếm
-  - `api/bookings/route.ts` — API đặt chỗ (in-memory)
-- `src/lib/data.ts` — dữ liệu mẫu và hàm `searchFlights`
-- `src/app/components/` — `SearchForm`, `FlightCard`
+  - `api/flights/route.ts` — API tìm kiếm (Postgres)
+  - `api/bookings/route.ts` — API đặt chỗ (Postgres, khóa giao dịch)
+- `src/lib/db.ts` — kết nối Postgres (Pool, `tx` helper)
+- `db/schema.sql` — lược đồ public
+- `db/sample_data_public.sql` — dữ liệu mẫu public
+- `db/fragmentation.sql` — phân mảnh (hn/dn/hcm + sec) và view hợp nhất
 
-Ghi chú: API booking hiện lưu dữ liệu trong bộ nhớ tiến trình để minh hoạ. Khi triển khai thật, cần thay bằng cơ sở dữ liệu phù hợp như đã mô tả ở phần kiến trúc.
+## Ghi chú
 
-## Tài liệu Next.js
-
-- https://nextjs.org/docs
-- https://nextjs.org/learn
+- Nếu bạn áp dụng phân mảnh (db/fragmentation.sql), cần điều chỉnh API để ghi vào schema site tương ứng (hn/dn/hcm) dựa trên `from_airport`. Phiên bản hiện tại thao tác ở public để dễ chạy demo.
+- Tích hợp thanh toán thật, quản trị CRUD và phân quyền sẽ được bổ sung theo yêu cầu.
