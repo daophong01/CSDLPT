@@ -9,7 +9,8 @@
     "lint": "next lint",
     "listen": "tsx scripts/web3-listener.ts",
     "compile:contracts": "hardhat compile",
-    "deploy:contracts": "hardhat run scripts/deploy.js --network custom"
+    "deploy:contracts": "hardhat run scripts/deploy.js --network custom",
+    "demo:issue": "hardhat run scripts/hardhat-demo.js --network custom"
   },
   "dependencies": {
     "react": "19.1.0",

@@ -33,6 +33,7 @@ export default function RootLayout({
               <Link href="/search" className="hover:underline">Tìm chuyến bay</Link>
               <Link href="/bookings" className="hover:underline">Đặt chỗ</Link>
               <Link href="/architecture" className="hover:underline">Kiến trúc</Link>
+              <Link href="/verify" className="hover:underline">Xác thực vé</Link>
             </div>
           </nav>
         </header>
