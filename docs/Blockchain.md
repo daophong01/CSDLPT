@@ -188,3 +188,104 @@ Phần này trình bày chi tiết kiến trúc, dữ liệu, hợp đồng thô
 - Chuẩn hoá metadata e-ticket theo IATA.
 - Layer2/payment channel tối ưu phí/latency.
 - Cross-chain khi nhiều mạng liên minh.
+
+---
+
+## PHẦN 5: PHÂN CÔNG CÔNG VIỆC THEO NHÓM 6 NGƯỜI
+
+Phân công dưới đây bám theo các phần đã phân tích và phù hợp với kiến trúc hệ thống trong repo. Mỗi người có đầu việc, sản phẩm bàn giao (deliverables), và tiêu chí nghiệm thu (acceptance).
+
+### Người 1: Phân tích & Đặt vấn đề
+- Phần 2.1. Đặt vấn đề:
+  - Phân tích nhu cầu, tầm quan trọng, mục tiêu dự án.
+  - Mô tả tổng quan nghiệp vụ, các tác nhân tham gia (Hãng bay, Đại lý, Sân bay, Khách hàng, Bộ phận kiểm soát).
+- Phần 2.2.1. Phân tích (một phần):
+  - Phân tích chức năng chính: quản lý chuyến bay (CHUYENBAY), quản lý vé (VE), đặt mua/đổi/hoàn, check-in, thanh toán.
+  - Bảng tần suất truy cập theo vai trò (Airline Ops, Agent, Customer, Airport).
+  - Phân quyền theo vai trò và đối tượng (on-chain: Registry, Ticketing; off-chain: DB role).
+  - ERD toàn hệ thống.
+- Deliverables:
+  - docs/Analysis.md (Đặt vấn đề, phạm vi, mục tiêu, tác nhân).
+  - docs/ERD.png hoặc docs/ERD.mmd (Mermaid) mô hình thực thể–liên kết.
+- Acceptance:
+  - ERD nhất quán với các bảng trong db/.
+  - Vai trò/phân quyền khớp với các hợp đồng trong contracts/.
+
+### Người 2: Thiết kế CSDL & Phân mảnh
+- Phần 2.2.2. Thiết kế (một phần):
+  - Thiết kế CSDL hệ thống (off-chain): tên bảng, trường, kiểu dữ liệu, PK/FK, ràng buộc.
+  - Sơ đồ quan hệ giữa các bảng (logical schema).
+- Thiết kế CSDL phân tán (CSDLPT):
+  - Lược đồ phân mảnh ngang cho VE, CHUYENBAY theo chi nhánh/khu vực.
+  - Phân mảnh dẫn xuất dựa trên quan hệ VE–CHUYENBAY.
+  - Xác định các bảng cần nhân bản (HANGBAY, MAYBAY, SANBAY).
+- Deliverables:
+  - db/offchain.sql (DDL chi tiết).
+  - docs/Fragmentation.md (mô tả phân mảnh, tiêu chí, lợi ích/performance).
+- Acceptance:
+  - DDL có thể chạy trên PostgreSQL/MSSQL (tuỳ chọn) không lỗi.
+  - Mô tả phân mảnh có ví dụ truy vấn minh hoạ.
+
+### Người 3: Thiết kế Định vị & Kiến trúc
+- Phần 2.2.2. Thiết kế (tiếp):
+  - Ánh xạ chi tiết các phân mảnh vào các site/chi nhánh.
+  - Thiết kế định vị dữ liệu, đồng bộ (event sourcing + listener), mô hình linkServer nếu dùng MSSQL cho demo nội bộ.
+- Thiết kế kiến trúc hệ thống:
+  - Mô hình tổng thể: Client/Web ↔ API ↔ Smart Contracts ↔ Blockchain ↔ DB Mirrors.
+  - Đường đồng bộ hoá: scripts/web3-listener.ts, hàng đợi sự kiện (nếu cần).
+  - Mô hình chi nhánh vs toàn hệ thống; phân lớp frontend/back-end.
+- Deliverables:
+  - docs/Architecture.mmd (Mermaid) hoặc Architecture.png.
+  - docs/Deployment.md (sơ đồ định vị, topology, RPC endpoints, site mapping).
+- Acceptance:
+  - Kiến trúc tương thích với hardhat.config.js và scripts/.
+  - Sơ đồ thể hiện rõ các kênh đồng bộ và điểm lỗi tiềm ẩn.
+
+### Người 4: Cài đặt Vật lý & Kết nối
+- Phần 3.1–3.5:
+  - Cài đặt và cấu hình VPN (tên mạng, IP plan).
+  - Tạo đường link kết nối giữa các server/site.
+  - Cài đặt SQL Server hoặc MongoDB/ PostgreSQL cho off-chain mirror; chụp màn hình các bước.
+  - Kiểm tra dịch vụ Agent (nếu MSSQL) hoặc background workers (Postgres).
+  - Tạo Linked Server (MSSQL) hoặc Foreign Data Wrapper (Postgres) để thử nghiệm liên kết.
+- Deliverables:
+  - docs/InfraSetup.md (VPN, IP schema, firewall rules).
+  - docs/DBSetup.md (cài đặt DB, ảnh chụp màn hình).
+- Acceptance:
+  - Có thể kết nối liên chi nhánh, truy vấn qua linked server/FDW thành công.
+
+### Người 5: Cài đặt Đồng bộ hóa & Giao tác
+- Phần 3.6–3.7 (một phần):
+  - Tạo Publication/Subscription (MSSQL Replication) hoặc Logical replication (Postgres) cho các bảng HANGBAY, MAYBAY, CHUYENBAY, VE.
+  - Viết câu lệnh SQL nhập dữ liệu mẫu, kiểm tra đồng bộ đa site.
+  - Viết truy vấn hiển thị dữ liệu từ các server khác nhau, kiểm tra nhất quán.
+- Deliverables:
+  - docs/Replication.md (các bước, ảnh màn hình).
+  - db/sample_data.sql (dữ liệu mẫu).
+- Acceptance:
+  - Dữ liệu nhân bản/đồng bộ hoạt động; truy vấn ở site A nhìn thấy dữ liệu site B theo thiết kế.
+
+### Người 6: Phát triển Nâng cao & Tài liệu hoá
+- Phần 3.7 (tiếp):
+  - Thống kê: SQL phức tạp (doanh thu theo chi nhánh, số vé đã bán, hệ số tải).
+  - Trigger:
+    - trg_CheckSeatAvailability: bảo đảm không vượt số ghế máy bay/segment.
+    - trg_SyncVeStatus: đồng bộ trạng thái VE giữa các site/mirror.
+  - Phân quyền: tạo roles và GRANT chi tiết theo tác nhân.
+- Bonus: Ứng dụng minh hoạ
+  - Front-end đơn giản (Next.js trong src/) hiển thị chuyến bay, vé, trạng thái, đồng bộ.
+- Tài liệu hoá:
+  - Tổng hợp tài liệu các thành viên, thống nhất định dạng, kiểm tra chính tả/ngữ pháp.
+- Deliverables:
+  - db/triggers.sql, db/roles.sql.
+  - src/pages/demo/* (trang demo, nếu thực hiện).
+  - docs/FinalReport.md (tổng hợp).
+- Acceptance:
+  - Trigger chạy không lỗi, kiểm thử tình huống vượt ghế và thay đổi trạng thái.
+  - Báo cáo cuối thống nhất, đầy đủ, liên kết nội dung các phần trước.
+
+### Lưu ý chung cho cả nhóm
+- Chuẩn hoá định dạng tài liệu Markdown trong thư mục docs/.
+- Đặt tên file rõ ràng, bám sát nội dung.
+- Chụp màn hình cấu hình/thiết lập để phục vụ nghiệm thu.
+- Dùng Mermaid cho sơ đồ (ưu tiên) để dễ sửa đổi trong repo.
