@@ -1,0 +1,43 @@
+flowchart LR
+    subgraph Client
+      UI[Web/Front-end]
+    end
+
+    subgraph Backend
+      API[API Gateway / Node.js]
+      Listener[scripts/web3-listener.ts]
+      DB[(PostgreSQL)]
+    end
+
+    subgraph Blockchain
+      Registry[AirlineRegistry.sol]
+      FlightSC[Flight.sol]
+      TicketingSC[Ticketing.sol]
+      RPC[(RPC / Provider)]
+    end
+
+    UI -- HTTP/JSON --> API
+    API -- SQL --> DB
+    Listener -- SQL (mirror upsert) --> DB
+    API <-- Subscribe/Read --> Listener
+
+    API -- ethers.js --> RPC
+    Listener -- ethers.js subscribe --> RPC
+
+    RPC --> Registry
+    RPC --> FlightSC
+    RPC --> TicketingSC
+
+    subgraph DB Schemas
+      HN[hn.*]
+      DN[dn.*]
+      HCM[hcm.*]
+      SEC[sec.customer_private]
+      PUB[public.* views]
+    end
+
+    API -- local queries --> HN
+    API -- local queries --> DN
+    API -- local queries --> HCM
+    API -- secure join --> SEC
+    API -- analytics --> PUB
