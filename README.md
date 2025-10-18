@@ -1,36 +1,115 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AirTicket — Thiết kế web quản lý vé máy bay (CSDL phân tán + Blockchain Hybrid)
 
-## Getting Started
+Ứng dụng Next.js với backend PostgreSQL, kèm mô hình Blockchain Hybrid:
+- Tìm kiếm chuyến bay (Postgres)
+- Tạo và xem đặt chỗ (Postgres, khóa giao dịch chống oversell)
+- Thiết kế blockchain cho vé (NFT e-ticket), listener đồng bộ on-chain → off-chain
 
-First, run the development server:
+## Thiết lập cơ sở dữ liệu
+
+1) Tạo database Postgres (ví dụ: `airticket`) và cấu hình biến môi trường:
+   - Sao chép `.env.example` thành `.env`
+   - Cập nhật `DATABASE_URL=postgres://user:password@localhost:5432/airticket`
+
+2) Khởi tạo lược đồ và dữ liệu mẫu (public schema):
+   - psql -d airticket -f db/schema.sql
+   - psql -d airticket -f db/sample_data_public.sql
+
+3) (Tuỳ chọn) Mô phỏng phân tán theo site (HN/DN/HCM):
+   - psql -d airticket -f db/fragmentation.sql
+   - Lưu ý: tệp phân mảnh tạo các schema hn/dn/hcm và view hợp nhất; nếu dùng phân mảnh, không nên đồng thời tạo bảng trùng tên ở public.
+
+4) (Tuỳ chọn) Off-chain DB cho Blockchain Hybrid:
+   - psql -d airticket -f db/offchain.sql
+   - Xem docs/Blockchain.md để hiểu mô hình hybrid.
+
+## Chạy dự án
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+# hoặc: yarn/pnpm/bun
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Blockchain Listener (đồng bộ on-chain → off-chain)
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+1) Cấu hình `.env`:
+   - RPC_URL=http://localhost:8545
+   - CONTRACT_ADDRESS=0xYourTicketingAddressHere
+   - FLIGHT_CONTRACT_ADDRESS=0xYourFlightAddressHere (tuỳ chọn nếu muốn mirror FlightCreated)
+   - WALLET_PRIVATE_KEY= (tuỳ chọn)
 
-## Learn More
+2) Chạy listener:
+```bash
+npm run listen
+```
+Listener sẽ subscribe:
+- Ticketing: TicketIssued/Purchased/Transferred/Canceled → upsert `ticket_mirror`
+- Flight: FlightCreated → upsert `flight_mirror` (nếu khai báo FLIGHT_CONTRACT_ADDRESS)
 
-To learn more about Next.js, take a look at the following resources:
+## Triển khai hợp đồng (Hardhat)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1) Cấu hình `.env`:
+   - RPC_URL=http://localhost:8545
+   - WALLET_PRIVATE_KEY=0x...
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+2) Compile & deploy:
+```bash
+npm run compile:contracts
+npm run deploy:contracts
+```
 
-## Deploy on Vercel
+Kết quả địa chỉ hợp đồng sẽ được lưu vào `.deployed.json` và in ra để bạn thiết lập vào `.env` (CONTRACT_ADDRESS, FLIGHT_CONTRACT_ADDRESS, REGISTRY_ADDRESS).
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Tính năng
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Trang chủ: tổng quan hệ thống
+- Tìm chuyến bay: /search — gọi API `/api/flights` (truy vấn Postgres)
+- Đặt chỗ: /bookings — gọi API `/api/bookings` để tạo/xem đặt chỗ (Postgres)
+  - Transaction + `pg_advisory_xact_lock(flight_id)` để tuần tự hóa theo chuyến bay, tránh oversell.
+  - Ghế dựa `airplane.capacity` và số vé đã phát hành (`ticket`).
+- Blockchain Hybrid:
+  - contracts/Ticketing.sol (Solidity, demo)
+  - scripts/web3-listener.ts (ethers, đồng bộ sự kiện)
+  - db/offchain.sql (mirror on-chain vào Postgres)
+  - docs/Blockchain.md (thiết kế chi tiết)
+
+## Kiến trúc CSDL phân tán (định hướng)
+
+- Flight Catalog: dữ liệu tuyến/lịch bay, có thể sao chép rộng (read replicas).
+- Inventory/Booking: giao dịch ghi nhất quán mạnh; ưu tiên DB phân tán (CockroachDB/Yugabyte) hoặc Postgres sharding.
+- Payments: xử lý thanh toán, idempotency, ledger.
+- Customer: phân mảnh dọc (public/private), bảo mật PII.
+
+Chiến lược:
+- Phân vùng theo tuyến/khu vực; sao chép đa vùng.
+- Event Sourcing + CQRS cho tách luồng ghi/đọc.
+- Chỉ mục tìm kiếm (Elasticsearch).
+- Hàng đợi sự kiện (Kafka/Pulsar).
+
+Nhất quán & chống oversell:
+- Transaction + khóa (advisory lock theo `flight_id`), kiểm số vé < sức chứa.
+- Có thể mở rộng bằng “reservation hold” với TTL.
+
+Khả năng mở rộng:
+- Sharding/partition theo region hoặc tuyến.
+- Observability đầy đủ (logs, metrics, tracing).
+
+## Cấu trúc thư mục đáng chú ý
+
+- `src/app/` — App Router
+  - `page.tsx`, `search/page.tsx`, `bookings/page.tsx`, `architecture/page.tsx`
+  - `api/flights/route.ts` — API tìm kiếm (Postgres)
+  - `api/bookings/route.ts` — API đặt chỗ (Postgres, khóa giao dịch)
+- `src/lib/db.ts` — kết nối Postgres (Pool, `tx` helper)
+- `contracts/Ticketing.sol` — hợp đồng vé mẫu (Solidity)
+- `scripts/web3-listener.ts` — đồng bộ on-chain → off-chain
+- `docs/Blockchain.md` — tài liệu thiết kế hybrid
+- `db/schema.sql`, `db/sample_data_public.sql`, `db/fragmentation.sql`, `db/offchain.sql`
+
+## Ghi chú
+
+- Nếu áp dụng phân mảnh (db/fragmentation.sql), cần điều chỉnh API ghi vào schema site tương ứng (hn/dn/hcm) theo `from_airport`.
+- Hợp đồng Solidity là ví dụ tối giản để demo luồng sự kiện; cần audit/bảo mật trước khi dùng sản xuất.
