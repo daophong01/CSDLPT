@@ -2,16 +2,21 @@ import { ethers } from "ethers";
 import { pool } from "@/lib/db";
 
 const RPC_URL = process.env.RPC_URL!;
-const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS!;
+const TICKETING_CONTRACT = process.env.CONTRACT_ADDRESS!; // Ticketing.sol
+const FLIGHT_CONTRACT = process.env.FLIGHT_CONTRACT_ADDRESS || ""; // Flight.sol
 const WALLET_PRIVATE_KEY = process.env.WALLET_PRIVATE_KEY!;
 
-// Minimal ABI with events used for mirroring
-const ABI = [
+// Minimal ABIs with events used for mirroring
+const TICKETING_ABI = [
   "event TicketIssued(uint256 indexed id, bytes32 flightId, uint256 price, bytes32 classCode)",
   "event TicketPurchased(uint256 indexed id, address indexed buyer, uint256 price)",
   "event TicketTransferred(uint256 indexed id, address indexed from, address indexed to)",
   "event TicketCanceled(uint256 indexed id)",
   "function tickets(uint256 id) view returns (uint256 id_, bytes32 flightId, address owner, uint256 price, bytes32 classCode, uint8 status)"
+];
+
+const FLIGHT_ABI = [
+  "event FlightCreated(bytes32 indexed flightId, string flightCode, string origin, string destination, uint256 departure, uint256 arrival, bytes32 airplaneHash, address indexed issuer)"
 ];
 
 async function upsertTicketMirror(data: {
@@ -49,16 +54,56 @@ async function upsertTicketMirror(data: {
   }
 }
 
+async function upsertFlightMirror(data: {
+  flightId: string;
+  flightCode: string;
+  origin: string;
+  destination: string;
+  departure: number;
+  arrival: number;
+  airplaneHash: string;
+  txHash: string;
+}) {
+  const client = await pool.connect();
+  try {
+    const existing = await client.query("SELECT flight_id FROM flight_mirror WHERE flight_id = $1", [data.flightId]);
+    if (existing.rowCount === 0) {
+      await client.query(
+        `INSERT INTO flight_mirror (flight_id, flight_code, origin, destination, departure, arrival, airplane_hash, last_event_tx)
+         VALUES ($1, $2, $3, $4, to_timestamp($5), to_timestamp($6), $7, $8)`,
+        [data.flightId, data.flightCode, data.origin, data.destination, data.departure, data.arrival, data.airplaneHash, data.txHash]
+      );
+    } else {
+      await client.query(
+        `UPDATE flight_mirror
+         SET flight_code = $2,
+             origin = $3,
+             destination = $4,
+             departure = to_timestamp($5),
+             arrival = to_timestamp($6),
+             airplane_hash = $7,
+             last_event_tx = $8
+         WHERE flight_id = $1`,
+        [data.flightId, data.flightCode, data.origin, data.destination, data.departure, data.arrival, data.airplaneHash, data.txHash]
+      );
+    }
+  } finally {
+    client.release();
+  }
+}
+
 async function main() {
-  if (!RPC_URL || !CONTRACT_ADDRESS) {
-    throw new Error("Missing RPC_URL or CONTRACT_ADDRESS in env");
+  if (!RPC_URL || !TICKETING_CONTRACT) {
+    throw new Error("Missing RPC_URL or CONTRACT_ADDRESS (Ticketing) in env");
   }
 
   const provider = new ethers.JsonRpcProvider(RPC_URL);
   const wallet = WALLET_PRIVATE_KEY ? new ethers.Wallet(WALLET_PRIVATE_KEY, provider) : undefined;
-  const contract = new ethers.Contract(CONTRACT_ADDRESS, ABI, wallet ?? provider);
 
-  contract.on("TicketIssued", async (id, flightId, price, classCode, event) => {
+  // Ticketing subscription
+  const ticketing = new ethers.Contract(TICKETING_CONTRACT, TICKETING_ABI, wallet ?? provider);
+
+  ticketing.on("TicketIssued", async (id, flightId, price, classCode, event) => {
     await upsertTicketMirror({
       ticketId: id.toString(),
       flightId: flightId,
@@ -70,7 +115,7 @@ async function main() {
     console.log("Issued:", id.toString(), "tx:", event.log.transactionHash);
   });
 
-  contract.on("TicketPurchased", async (id, buyer, price, event) => {
+  ticketing.on("TicketPurchased", async (id, buyer, price, event) => {
     await upsertTicketMirror({
       ticketId: id.toString(),
       flightId: "", // keep existing
@@ -82,7 +127,7 @@ async function main() {
     console.log("Purchased:", id.toString(), "buyer:", buyer, "tx:", event.log.transactionHash);
   });
 
-  contract.on("TicketTransferred", async (id, from, to, event) => {
+  ticketing.on("TicketTransferred", async (id, from, to, event) => {
     await upsertTicketMirror({
       ticketId: id.toString(),
       flightId: "",
@@ -93,7 +138,7 @@ async function main() {
     console.log("Transferred:", id.toString(), "to:", to, "tx:", event.log.transactionHash);
   });
 
-  contract.on("TicketCanceled", async (id, event) => {
+  ticketing.on("TicketCanceled", async (id, event) => {
     await upsertTicketMirror({
       ticketId: id.toString(),
       flightId: "",
@@ -103,7 +148,26 @@ async function main() {
     console.log("Canceled:", id.toString(), "tx:", event.log.transactionHash);
   });
 
-  console.log("Web3 listener started. Subscribed to contract:", CONTRACT_ADDRESS);
+  // Flight subscription (optional if FLIGHT_CONTRACT set)
+  if (FLIGHT_CONTRACT) {
+    const flight = new ethers.Contract(FLIGHT_CONTRACT, FLIGHT_ABI, wallet ?? provider);
+    flight.on("FlightCreated", async (flightId, flightCode, origin, destination, departure, arrival, airplaneHash, issuer, event) => {
+      await upsertFlightMirror({
+        flightId: flightId,
+        flightCode,
+        origin,
+        destination,
+        departure: Number(departure),
+        arrival: Number(arrival),
+        airplaneHash,
+        txHash: event.log.transactionHash,
+      });
+      console.log("FlightCreated:", flightCode, "tx:", event.log.transactionHash);
+    });
+    console.log("Subscribed Flight contract:", FLIGHT_CONTRACT);
+  }
+
+  console.log("Web3 listener started. Ticketing contract:", TICKETING_CONTRACT);
 }
 
 main().catch((e) => {

@@ -37,14 +37,17 @@ Mở http://localhost:3000.
 
 1) Cấu hình `.env`:
    - RPC_URL=http://localhost:8545
-   - CONTRACT_ADDRESS=0xYourContractAddressHere
+   - CONTRACT_ADDRESS=0xYourTicketingAddressHere
+   - FLIGHT_CONTRACT_ADDRESS=0xYourFlightAddressHere (tuỳ chọn nếu muốn mirror FlightCreated)
    - WALLET_PRIVATE_KEY= (tuỳ chọn)
 
 2) Chạy listener:
 ```bash
 npm run listen
 ```
-Listener sẽ subscribe sự kiện TicketIssued/Purchased/Transferred/Canceled và upsert vào `ticket_mirror`.
+Listener sẽ subscribe:
+- Ticketing: TicketIssued/Purchased/Transferred/Canceled → upsert `ticket_mirror`
+- Flight: FlightCreated → upsert `flight_mirror` (nếu khai báo FLIGHT_CONTRACT_ADDRESS)
 
 ## Tính năng
 
