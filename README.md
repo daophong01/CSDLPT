@@ -49,6 +49,20 @@ Listener sẽ subscribe:
 - Ticketing: TicketIssued/Purchased/Transferred/Canceled → upsert `ticket_mirror`
 - Flight: FlightCreated → upsert `flight_mirror` (nếu khai báo FLIGHT_CONTRACT_ADDRESS)
 
+## Triển khai hợp đồng (Hardhat)
+
+1) Cấu hình `.env`:
+   - RPC_URL=http://localhost:8545
+   - WALLET_PRIVATE_KEY=0x...
+
+2) Compile & deploy:
+```bash
+npm run compile:contracts
+npm run deploy:contracts
+```
+
+Kết quả địa chỉ hợp đồng sẽ được lưu vào `.deployed.json` và in ra để bạn thiết lập vào `.env` (CONTRACT_ADDRESS, FLIGHT_CONTRACT_ADDRESS, REGISTRY_ADDRESS).
+
 ## Tính năng
 
 - Trang chủ: tổng quan hệ thống
