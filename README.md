@@ -1,9 +1,9 @@
-# AirTicket — Thiết kế web quản lý vé máy bay (định hướng CSDL phân tán)
+# AirTicket — Thiết kế web quản lý vé máy bay (CSDL phân tán + Blockchain Hybrid)
 
-Ứng dụng Next.js với backend PostgreSQL, mô phỏng:
-- Tìm kiếm chuyến bay
-- Tạo và xem đặt chỗ (khóa giao dịch chống oversell)
-- Mô tả kiến trúc cơ sở dữ liệu phân tán
+Ứng dụng Next.js với backend PostgreSQL, kèm mô hình Blockchain Hybrid:
+- Tìm kiếm chuyến bay (Postgres)
+- Tạo và xem đặt chỗ (Postgres, khóa giao dịch chống oversell)
+- Thiết kế blockchain cho vé (NFT e-ticket), listener đồng bộ on-chain → off-chain
 
 ## Thiết lập cơ sở dữ liệu
 
@@ -19,6 +19,10 @@
    - psql -d airticket -f db/fragmentation.sql
    - Lưu ý: tệp phân mảnh tạo các schema hn/dn/hcm và view hợp nhất; nếu dùng phân mảnh, không nên đồng thời tạo bảng trùng tên ở public.
 
+4) (Tuỳ chọn) Off-chain DB cho Blockchain Hybrid:
+   - psql -d airticket -f db/offchain.sql
+   - Xem docs/Blockchain.md để hiểu mô hình hybrid.
+
 ## Chạy dự án
 
 ```bash
@@ -29,13 +33,31 @@ npm run dev
 
 Mở http://localhost:3000.
 
+## Blockchain Listener (đồng bộ on-chain → off-chain)
+
+1) Cấu hình `.env`:
+   - RPC_URL=http://localhost:8545
+   - CONTRACT_ADDRESS=0xYourContractAddressHere
+   - WALLET_PRIVATE_KEY= (tuỳ chọn)
+
+2) Chạy listener:
+```bash
+npm run listen
+```
+Listener sẽ subscribe sự kiện TicketIssued/Purchased/Transferred/Canceled và upsert vào `ticket_mirror`.
+
 ## Tính năng
 
 - Trang chủ: tổng quan hệ thống
 - Tìm chuyến bay: /search — gọi API `/api/flights` (truy vấn Postgres)
 - Đặt chỗ: /bookings — gọi API `/api/bookings` để tạo/xem đặt chỗ (Postgres)
-  - Khi đặt chỗ, hệ thống dùng `pg_advisory_xact_lock(flight_id)` để tuần tự hóa giao dịch theo chuyến bay, tránh oversell.
-  - Số ghế được tính từ `airplane.capacity` và số vé đã phát hành (`ticket`).
+  - Transaction + `pg_advisory_xact_lock(flight_id)` để tuần tự hóa theo chuyến bay, tránh oversell.
+  - Ghế dựa `airplane.capacity` và số vé đã phát hành (`ticket`).
+- Blockchain Hybrid:
+  - contracts/Ticketing.sol (Solidity, demo)
+  - scripts/web3-listener.ts (ethers, đồng bộ sự kiện)
+  - db/offchain.sql (mirror on-chain vào Postgres)
+  - docs/Blockchain.md (thiết kế chi tiết)
 
 ## Kiến trúc CSDL phân tán (định hướng)
 
@@ -61,18 +83,16 @@ Khả năng mở rộng:
 ## Cấu trúc thư mục đáng chú ý
 
 - `src/app/` — App Router
-  - `page.tsx` — trang chủ
-  - `search/page.tsx` — tìm chuyến bay
-  - `bookings/page.tsx` — danh sách đặt chỗ
-  - `architecture/page.tsx` — mô tả kiến trúc
+  - `page.tsx`, `search/page.tsx`, `bookings/page.tsx`, `architecture/page.tsx`
   - `api/flights/route.ts` — API tìm kiếm (Postgres)
   - `api/bookings/route.ts` — API đặt chỗ (Postgres, khóa giao dịch)
 - `src/lib/db.ts` — kết nối Postgres (Pool, `tx` helper)
-- `db/schema.sql` — lược đồ public
-- `db/sample_data_public.sql` — dữ liệu mẫu public
-- `db/fragmentation.sql` — phân mảnh (hn/dn/hcm + sec) và view hợp nhất
+- `contracts/Ticketing.sol` — hợp đồng vé mẫu (Solidity)
+- `scripts/web3-listener.ts` — đồng bộ on-chain → off-chain
+- `docs/Blockchain.md` — tài liệu thiết kế hybrid
+- `db/schema.sql`, `db/sample_data_public.sql`, `db/fragmentation.sql`, `db/offchain.sql`
 
 ## Ghi chú
 
-- Nếu bạn áp dụng phân mảnh (db/fragmentation.sql), cần điều chỉnh API để ghi vào schema site tương ứng (hn/dn/hcm) dựa trên `from_airport`. Phiên bản hiện tại thao tác ở public để dễ chạy demo.
-- Tích hợp thanh toán thật, quản trị CRUD và phân quyền sẽ được bổ sung theo yêu cầu.
+- Nếu áp dụng phân mảnh (db/fragmentation.sql), cần điều chỉnh API ghi vào schema site tương ứng (hn/dn/hcm) theo `from_airport`.
+- Hợp đồng Solidity là ví dụ tối giản để demo luồng sự kiện; cần audit/bảo mật trước khi dùng sản xuất.
