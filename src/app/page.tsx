@@ -23,6 +23,14 @@ export default function Home() {
           <h2 className="font-semibold">Kiến trúc phân tán</h2>
           <p className="text-sm">Mô tả thiết kế CSDL phân tán cho hệ thống.</p>
         </Link>
+        <Link href="/onchain" className="block border rounded-lg p-4 hover:bg-black/[.03] dark:hover:bg-white/[.06]">
+          <h2 className="font-semibold">On-chain</h2>
+          <p className="text-sm">Xem chuyến bay từ sự kiện on-chain và mua vé (demo).</p>
+        </Link>
+        <Link href="/verify" className="block border rounded-lg p-4 hover:bg-black/[.03] dark:hover:bg-white/[.06]">
+          <h2 className="font-semibold">Xác thực vé</h2>
+          <p className="text-sm">Tra cứu vé từ mirror on-chain theo ticketId.</p>
+        </Link>
       </div>
     </section>
   );

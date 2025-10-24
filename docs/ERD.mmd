@@ -1,0 +1,82 @@
+erDiagram
+    AIRPORT ||--o{ BRANCH : has
+    AIRPLANE ||--o{ FLIGHT : operates
+    AIRPORT ||--o{ FLIGHT : origin
+    AIRPORT ||--o{ FLIGHT : destination
+
+    CUSTOMER_PUBLIC ||--|| CUSTOMER_PRIVATE : extends
+
+    FLIGHT ||--o{ BOOKING : has
+    CUSTOMER_PUBLIC ||--o{ BOOKING : makes
+    BOOKING ||--o{ TICKET : includes
+    BOOKING ||--o{ PAYMENT : pays
+
+    AIRPORT {
+      int airport_id PK
+      string code
+      string name
+      string city
+      string country
+    }
+
+    BRANCH {
+      int branch_id PK
+      string name
+      int airport_id FK
+      string address
+    }
+
+    AIRPLANE {
+      int airplane_id PK
+      string model
+      int capacity
+    }
+
+    FLIGHT {
+      int flight_id PK
+      string code
+      int from_airport FK
+      int to_airport FK
+      datetime departure_time
+      datetime arrival_time
+      int airplane_id FK
+    }
+
+    CUSTOMER_PUBLIC {
+      int customer_id PK
+      string full_name
+      string phone
+    }
+
+    CUSTOMER_PRIVATE {
+      int customer_id PK FK
+      string email
+      string address
+      string national_id
+    }
+
+    BOOKING {
+      int booking_id PK
+      int flight_id FK
+      int customer_id FK
+      string status
+      datetime created_at
+    }
+
+    TICKET {
+      int ticket_id PK
+      int booking_id FK
+      string seat_no
+      string class
+      decimal price
+    }
+
+    PAYMENT {
+      int payment_id PK
+      int booking_id FK
+      decimal amount
+      string currency
+      string status
+      string method
+      datetime paid_at
+    }
