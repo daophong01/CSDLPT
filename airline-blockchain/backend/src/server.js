@@ -28,6 +28,10 @@ app.use("/api/analytics", require("./routes/analytics"));
 
 app.get("/health", (_, res) => res.json({ ok: true }));
 
-app.listen(PORT, () => {
-  console.log("Backend running on port", PORT);
-});
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log("Backend running on port", PORT);
+  });
+}
+
+module.exports = app;

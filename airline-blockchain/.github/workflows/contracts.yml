@@ -1,0 +1,27 @@
+name: Contracts CI
+
+on:
+  push:
+    paths:
+      - "airline-blockchain/smart-contracts/**"
+      - ".github/workflows/contracts.yml"
+  pull_request:
+    paths:
+      - "airline-blockchain/smart-contracts/**"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: airline-blockchain/smart-contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: airline-blockchain/smart-contracts/package.json
+      - run: npm install
+      - run: npx hardhat compile
+      - run: npm test

@@ -1,0 +1,27 @@
+name: Frontend CI
+
+on:
+  push:
+    paths:
+      - "airline-blockchain/frontend/**"
+      - ".github/workflows/frontend.yml"
+  pull_request:
+    paths:
+      - "airline-blockchain/frontend/**"
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: airline-blockchain/frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "npm"
+          cache-dependency-path: airline-blockchain/frontend/package.json
+      - run: npm install
+      - run: npm test -- --passWithNoTests
+      - run: npm run build
